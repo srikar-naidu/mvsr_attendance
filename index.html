@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bunk Meter — MVSR Attendance</title>
+<style>
+  :root {
+    --safe: #1e9e5e;
+    --danger: #d64545;
+    --bg: #0f1115;
+    --card: #171a21;
+    --text: #eaecef;
+    --muted: #9aa1ac;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 32px 16px 80px; }
+  h1 { font-size: 1.5rem; margin-bottom: 4px; }
+  .sub { color: var(--muted); margin-bottom: 28px; font-size: 0.9rem; }
+
+  /* Login form */
+  #login-card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 28px;
+    max-width: 380px;
+    margin: 60px auto;
+  }
+  #login-card h2 { margin-top: 0; font-size: 1.2rem; }
+  label { display: block; font-size: 0.85rem; color: var(--muted); margin: 14px 0 6px; }
+  input[type=text], input[type=password] {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #2a2e38;
+    background: #0f1115;
+    color: var(--text);
+    font-size: 1rem;
+  }
+  button {
+    margin-top: 20px;
+    width: 100%;
+    padding: 11px;
+    border-radius: 8px;
+    border: none;
+    background: #4f7cff;
+    color: white;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  button:hover { background: #3d67e6; }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
+  .error { color: var(--danger); font-size: 0.85rem; margin-top: 10px; min-height: 1em; }
+  .privacy-note { font-size: 0.78rem; color: var(--muted); margin-top: 18px; line-height: 1.4; }
+
+  /* Dashboard */
+  #dashboard { display: none; }
+  .overall-card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .overall-pct { font-size: 2.4rem; font-weight: 700; }
+  .overall-verdict { font-size: 0.95rem; margin-top: 4px; }
+  .badge {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .badge.safe { background: rgba(30,158,94,0.15); color: var(--safe); }
+  .badge.danger { background: rgba(214,69,69,0.15); color: var(--danger); }
+
+  .subject-row {
+    background: var(--card);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 10px;
+  }
+  .subject-top { display: flex; justify-content: space-between; align-items: center; }
+  .subject-name { font-weight: 600; font-size: 0.98rem; }
+  .subject-pct { font-weight: 700; }
+  .bar-track {
+    height: 6px;
+    background: #24272f;
+    border-radius: 999px;
+    margin-top: 10px;
+    overflow: hidden;
+  }
+  .bar-fill { height: 100%; border-radius: 999px; }
+  .subject-meta { font-size: 0.82rem; color: var(--muted); margin-top: 8px; }
+
+  #logout-btn {
+    background: transparent;
+    border: 1px solid #2a2e38;
+    color: var(--muted);
+    width: auto;
+    padding: 7px 14px;
+    font-size: 0.85rem;
+    margin: 0;
+  }
+  .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .loading { text-align: center; color: var(--muted); padding: 40px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div id="login-card">
+    <h2>Bunk Meter</h2>
+    <p class="sub" style="margin-bottom:0;">Log in with your winnou / onEdu credentials</p>
+    <label for="username">Roll Number</label>
+    <input type="text" id="username" autocomplete="username" placeholder="2451-25-751-012">
+    <label for="password">Password</label>
+    <input type="password" id="password" autocomplete="current-password">
+    <button id="login-btn">Log in</button>
+    <div class="error" id="login-error"></div>
+    <div class="privacy-note">
+      Your password is sent directly to the portal to log you in and is never stored.
+      Only your attendance session stays on the server, and it expires automatically.
+    </div>
+  </div>
+
+  <div id="dashboard">
+    <div class="top-bar">
+      <div>
+        <h1>Your Attendance</h1>
+        <p class="sub" style="margin-bottom:0;">75% target</p>
+      </div>
+      <button id="logout-btn">Log out</button>
+    </div>
+
+    <div id="content"><div class="loading">Loading attendance…</div></div>
+  </div>
+
+</div>
+
+<script>
+const loginCard = document.getElementById('login-card');
+const dashboard = document.getElementById('dashboard');
+const loginBtn = document.getElementById('login-btn');
+const loginError = document.getElementById('login-error');
+const content = document.getElementById('content');
+
+function pctColor(pct) {
+  return pct >= 75 ? 'var(--safe)' : 'var(--danger)';
+}
+
+function renderDashboard(data) {
+  const o = data.overall;
+  const overallColor = pctColor(o.current_pct);
+
+  let html = `
+    <div class="overall-card">
+      <div>
+        <div class="overall-pct" style="color:${overallColor}">${o.current_pct}%</div>
+        <div class="overall-verdict">
+          ${o.status === 'safe'
+            ? `You can bunk <b>${o.can_bunk}</b> more classes overall`
+            : `Attend <b>${o.must_attend}</b> classes in a row to reach 75%`}
+        </div>
+      </div>
+      <span class="badge ${o.status === 'safe' ? 'safe' : 'danger'}">
+        ${o.status === 'safe' ? 'Safe' : 'At risk'}
+      </span>
+    </div>
+  `;
+
+  data.subjects.forEach(s => {
+    const bm = s.bunk_meter;
+    const color = pctColor(s.percentage);
+    html += `
+      <div class="subject-row">
+        <div class="subject-top">
+          <div class="subject-name">${s.subject}</div>
+          <div class="subject-pct" style="color:${color}">${s.percentage}%</div>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" style="width:${Math.min(s.percentage,100)}%; background:${color}"></div>
+        </div>
+        <div class="subject-meta">
+          ${s.attended}/${s.held} classes ·
+          ${bm.status === 'safe'
+            ? `can bunk ${bm.can_bunk} more`
+            : `must attend next ${bm.must_attend} to recover`}
+        </div>
+      </div>
+    `;
+  });
+
+  content.innerHTML = html;
+}
+
+async function loadAttendance() {
+  content.innerHTML = '<div class="loading">Loading attendance…</div>';
+  try {
+    const res = await fetch('/api/attendance');
+    const data = await res.json();
+    if (!res.ok) {
+      content.innerHTML = `<div class="loading">${data.error || 'Something went wrong.'}</div>`;
+      return;
+    }
+    renderDashboard(data);
+  } catch (e) {
+    content.innerHTML = '<div class="loading">Network error. Try refreshing.</div>';
+  }
+}
+
+loginBtn.addEventListener('click', async () => {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  loginError.textContent = '';
+
+  if (!username || !password) {
+    loginError.textContent = 'Please enter both fields.';
+    return;
+  }
+
+  loginBtn.disabled = true;
+  loginBtn.textContent = 'Logging in…';
+
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      loginError.textContent = data.error || 'Login failed.';
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Log in';
+      return;
+    }
+
+    // Clear password field from memory/DOM immediately after use
+    document.getElementById('password').value = '';
+
+    loginCard.style.display = 'none';
+    dashboard.style.display = 'block';
+    loadAttendance();
+  } catch (e) {
+    loginError.textContent = 'Could not reach the server.';
+    loginBtn.disabled = false;
+    loginBtn.textContent = 'Log in';
+  }
+});
+
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  dashboard.style.display = 'none';
+  loginCard.style.display = 'block';
+  loginBtn.disabled = false;
+  loginBtn.textContent = 'Log in';
+});
+</script>
+</body>
+</html>
