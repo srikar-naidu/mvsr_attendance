@@ -25,9 +25,25 @@ classes they can skip (or must attend) to stay at/reach 75%.
   server-side in memory (never the password itself), referenced by a
   random id in their browser cookie. Sessions auto-expire after 30
   minutes of inactivity, and login attempts are rate-limited per IP.
-- **`templates/index.html`** — single-page login (with CAPTCHA support)
-  + dashboard UI: overview, per-subject cards with absent dates, and a
-  day-by-day calendar/history view filterable by month.
+- **`templates/index.html` / `static/style.css` / `static/app.js`** — a
+  themeable single-page app (login with CAPTCHA support, then a tabbed
+  dashboard):
+  - **Dashboard** — profile summary, overall attendance ring, automatic
+    alert banners (🔴 below 75%, 🟡 75–80%, 🟢 above 80%), and per-subject
+    cards with full absent-date lists.
+  - **Analytics** — 🔥 attendance streak, weekly/monthly attendance bar
+    charts, present-vs-absent day donut, and a subject-wise trend list —
+    all computed client-side from the real day-by-day history.
+  - **Timetable** — an honest "today's periods" view built from the
+    portal's real per-slot P/A data. The portal does not expose which
+    *subject* runs in each period, so periods are labeled by time slot,
+    not by class name.
+  - **Skip calculator** — pick any subject (or overall) and see exactly
+    how many classes you can miss, or must attend, to stay at 75%.
+  - **Profile** — student details, theme picker (light / dark / midnight
+    / glass / system) with an accent color picker, and logout.
+  - Fully responsive: a floating top nav on desktop, a fixed bottom nav
+    on mobile.
 
 Because every student authenticates with their own roll number and
 password, this works for anyone at the college, not just one class —
