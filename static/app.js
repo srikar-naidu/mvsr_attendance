@@ -626,9 +626,9 @@ function renderTimetable() {
 
   let html = '';
   html += '<div class="card">';
-  html += '<div class="eyebrow">Today\u2019s periods</div>';
+  html += '<div class="eyebrow">Period Log</div>';
   html += '<h2 style="font-size:1.15rem">' + activeDay.label + '</h2>';
-  html += '<p class="subject-meta" style="margin-top:4px">The portal reports presence per time slot, not per subject \u2014 so periods are shown by time, not by class name.</p>';
+  html += '<p class="subject-meta" style="margin-top:4px">Shows attendance status per period \u2014 subject names aren\u2019t available for this view, only the summary table has those.</p>';
   html += '<div class="day-switcher" id="day-switcher">' + buildDayChips(days) + '</div>';
   html += buildPeriodList(activeDay);
   html += '</div>';

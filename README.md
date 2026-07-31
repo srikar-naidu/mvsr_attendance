@@ -34,10 +34,12 @@ classes they can skip (or must attend) to stay at/reach 75%.
   - **Analytics** — 🔥 attendance streak, weekly/monthly attendance bar
     charts, present-vs-absent day donut, and a subject-wise trend list —
     all computed client-side from the real day-by-day history.
-  - **Timetable** — an honest "today's periods" view built from the
-    portal's real per-slot P/A data. The portal does not expose which
-    *subject* runs in each period, so periods are labeled by time slot,
-    not by class name.
+  - **Period Log** — a day-wise record of attendance per time slot,
+    built from the portal's real per-slot P/A data. It's intentionally
+    *not* called a timetable: the portal does not expose which subject
+    runs in each period, so this shows attendance status by time slot,
+    not by class name (that mapping only exists in the subject-wise
+    summary table).
   - **Skip calculator** — pick any subject (or overall) and see exactly
     how many classes you can miss, or must attend, to stay at 75%.
   - **Profile** — student details, theme picker (light / dark / midnight
