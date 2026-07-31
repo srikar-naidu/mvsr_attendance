@@ -7,17 +7,40 @@ classes they can skip (or must attend) to stay at/reach 75%.
 ## How it works
 
 - **`scraper.py`** — logs into winnou (handles the Joomla CSRF token
-  automatically), scrapes the attendance table, and computes the bunk
-  meter math per subject and overall.
-- **`app.py`** — a small Flask backend. Each user's login creates an
-  authenticated `requests.Session` kept server-side in memory (never the
-  password itself), referenced by a random id in their browser cookie.
-  Sessions auto-expire after 30 minutes of inactivity.
-- **`templates/index.html`** — single-page login + dashboard UI.
+  automatically, and the portal's **randomly-appearing CAPTCHA**), then
+  scrapes:
+  - student info (name, father's name, roll no, section)
+  - subject-wise attendance, including full absent-date lists (pulled
+    from the table's tooltip data, since the visible text is truncated)
+  - a day-by-day period-level history
+  - bunk-meter math per subject and overall
+- **`app.py`** — a small Flask backend. Login is a two-step relay:
+  1. `GET /api/login/start` opens a session against winnou and reports
+     whether a CAPTCHA is required this time (the portal enables it
+     unpredictably per page load).
+  2. `POST /api/login` submits username/password (+ CAPTCHA text if
+     needed) using that same session.
+
+  Each user's login creates an authenticated `requests.Session` kept
+  server-side in memory (never the password itself), referenced by a
+  random id in their browser cookie. Sessions auto-expire after 30
+  minutes of inactivity, and login attempts are rate-limited per IP.
+- **`templates/index.html`** — single-page login (with CAPTCHA support)
+  + dashboard UI: overview, per-subject cards with absent dates, and a
+  day-by-day calendar/history view filterable by month.
 
 Because every student authenticates with their own roll number and
 password, this works for anyone at the college, not just one class —
 each person only ever sees their own data.
+
+### About the CAPTCHA
+
+The winnou login page hides a `checkcaptcha` flag that's `"0"` or
+`"1"` unpredictably per page load. When it's `"1"`, the portal expects
+a CAPTCHA image to be solved. The backend detects this, downloads the
+image, and serves it to the frontend at login time — the student solves
+it right there in the login form, same as they would on the real
+portal. No OCR or CAPTCHA-bypassing is involved.
 
 ## Running it locally
 
