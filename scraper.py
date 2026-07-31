@@ -29,6 +29,25 @@ class ScrapeError(Exception):
     pass
 
 
+def _looks_logged_in(html: str) -> bool:
+    text = BeautifulSoup(html, "html.parser").get_text(" ", strip=True).lower()
+    markers = [
+        "log out",
+        "logout",
+        "sign out",
+        "my profile",
+        "welcome",
+    ]
+    return any(marker in text for marker in markers)
+
+
+def _looks_like_login_page(html: str) -> bool:
+    soup = BeautifulSoup(html, "html.parser")
+    has_user = bool(soup.find("input", attrs={"name": re.compile(r"username", re.IGNORECASE)}))
+    has_pass = bool(soup.find("input", attrs={"name": re.compile(r"pass|passwd|password", re.IGNORECASE)}))
+    return has_user and has_pass
+
+
 def login(username: str, password: str) -> requests.Session:
     """
     Logs into the winnou portal with the given credentials.
@@ -43,18 +62,17 @@ def login(username: str, password: str) -> requests.Session:
         "User-Agent": "Mozilla/5.0 (compatible; AttendanceBunkMeter/1.0)"
     })
 
-    # Step 1: GET the login page to find the current CSRF token
     resp = session.get(LOGIN_URL, timeout=15)
+    resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
     token_input = soup.find("input", attrs={"name": TOKEN_NAME_RE})
     if not token_input:
         raise LoginError("Could not find login form / CSRF token. Portal may be down or changed structure.")
 
-    token_name = token_input["name"]
-    token_value = token_input.get("value", "1")
+    token_name = str(token_input["name"])
+    token_value = str(token_input.get("value", "1"))
 
-    # Step 2: POST the login form, matching the exact fields winnou expects
     payload = {
         "username": username,
         "passwd": password,
@@ -63,17 +81,40 @@ def login(username: str, password: str) -> requests.Session:
         "SubmitL": "Sign in",
         "option": "com_user",
         "task": "login",
-        # base64 of "https://mvsr.winnou.net/index.php" - the post-login redirect target
         "return": "aHR0cHM6Ly9tdnNyLndpbm5vdS5uZXQvaW5kZXgucGhw",
-        token_name: token_value,
     }
+    payload[token_name] = token_value
 
-    resp = session.post(LOGIN_URL, data=payload, timeout=15)
+    resp = session.post(LOGIN_URL, data=payload, timeout=15, allow_redirects=True)
+    resp.raise_for_status()
 
-    if "Log Out" not in resp.text and "Welcome" not in resp.text:
+    if _looks_like_login_page(resp.text) and not _looks_logged_in(resp.text):
+        raise LoginError("Login failed. Check your roll number / password.")
+
+    attendance_probe = session.get(ATTENDANCE_URL, timeout=15, allow_redirects=True)
+    attendance_probe.raise_for_status()
+    if _looks_like_login_page(attendance_probe.text) and not _looks_logged_in(attendance_probe.text):
         raise LoginError("Login failed. Check your roll number / password.")
 
     return session
+
+
+def _clean_number(value: str) -> float:
+    cleaned = re.sub(r"[^0-9.]", "", value)
+    if not cleaned:
+        raise ValueError(f"Could not parse number from {value!r}")
+    return float(cleaned)
+
+
+def _find_attendance_table(soup: BeautifulSoup):
+    for table in soup.find_all("table"):
+        headers = [th.get_text(" ", strip=True).lower() for th in table.find_all("th")]
+        header_text = " | ".join(headers)
+        if any("subject" in h for h in headers) and any("attend" in h for h in headers):
+            return table
+        if "subject" in header_text and ("percentage" in header_text or "%" in header_text):
+            return table
+    return None
 
 
 def get_attendance(session: requests.Session) -> list[dict]:
@@ -81,40 +122,83 @@ def get_attendance(session: requests.Session) -> list[dict]:
     Fetches and parses the subject-wise attendance table for the
     currently logged-in student.
     """
-    resp = session.get(ATTENDANCE_URL, timeout=15)
+    resp = session.get(ATTENDANCE_URL, timeout=15, allow_redirects=True)
+    resp.raise_for_status()
+    if _looks_like_login_page(resp.text) and not _looks_logged_in(resp.text):
+        raise ScrapeError("Session expired or login did not succeed. Please log in again.")
+
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    table = soup.find("table", id="fd-table-1")
+    table = _find_attendance_table(soup)
     if not table:
-        raise ScrapeError("Could not find attendance table. Session may have expired - try logging in again.")
+        raise ScrapeError("Could not find attendance table. Portal layout may have changed.")
 
     subjects = []
-    rows = table.find_all("tr")
-
-    for row in rows:
+    for row in table.find_all("tr"):
         cells = row.find_all(["td", "th"])
-        if len(cells) < 7:
+        values = [cell.get_text(" ", strip=True) for cell in cells]
+        if len(values) < 4:
             continue
 
-        first_cell = cells[0].get_text(strip=True)
-        # Skip the header row and the TOTAL row - both have non-numeric
-        # or th-based first cells instead of a row number.
-        if not first_cell.isdigit():
+        first_cell = values[0].strip().lower()
+        row_text = " ".join(values).lower()
+        if first_cell in {"s.no", "sno", "sl.no", "subject"}:
+            continue
+        if "total" in row_text and len(values) <= 7:
             continue
 
-        subject_name = cells[1].get_text(strip=True)
-        try:
-            held = float(cells[2].get_text(strip=True))
-            attended = float(cells[3].get_text(strip=True))
-            percentage = float(cells[6].get_text(strip=True))
-        except ValueError:
+        subject_name = None
+        number_values = []
+        for value in values:
+            compact = value.strip()
+            if subject_name is None and compact and not compact.isdigit() and not re.fullmatch(r"[0-9.]+%?", compact):
+                subject_name = compact
+            try:
+                number_values.append(_clean_number(compact))
+            except ValueError:
+                pass
+
+        if not subject_name or len(number_values) < 3:
             continue
+
+        held = None
+        attended = None
+        percentage = None
+
+        for i in range(len(values) - 1):
+            label = values[i].strip().lower()
+            next_value = values[i + 1].strip()
+            try:
+                parsed = _clean_number(next_value)
+            except ValueError:
+                continue
+
+            if held is None and any(key in label for key in ["held", "conducted", "total classes", "classes held"]):
+                held = parsed
+            elif attended is None and any(key in label for key in ["attended", "present"]):
+                attended = parsed
+            elif percentage is None and any(key in label for key in ["%", "percent", "percentage"]):
+                percentage = parsed
+
+        if held is None or attended is None:
+            numeric_tail = number_values[-3:]
+            if len(numeric_tail) >= 2:
+                held = held if held is not None else numeric_tail[0]
+                attended = attended if attended is not None else numeric_tail[1]
+                if percentage is None and len(numeric_tail) >= 3:
+                    percentage = numeric_tail[2]
+
+        if held is None or attended is None:
+            continue
+
+        if percentage is None:
+            percentage = round((attended / held) * 100, 2) if held else 0.0
 
         subjects.append({
             "subject": subject_name,
             "held": held,
             "attended": attended,
-            "percentage": percentage,
+            "percentage": round(percentage, 2),
         })
 
     if not subjects:
