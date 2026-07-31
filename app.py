@@ -23,6 +23,7 @@ classmates. If this ever needs to scale to hundreds of concurrent
 users, swap the in-memory dicts for Redis with a TTL.
 """
 
+import os
 import time
 import uuid
 import secrets
@@ -31,7 +32,14 @@ from flask import Flask, request, jsonify, session, render_template, Response
 from scraper import start_login, finish_login, get_dashboard_data, LoginError, ScrapeError
 
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(32)  # rotates on restart -> logs everyone out, that's fine
+
+# IMPORTANT: set a fixed SECRET_KEY env var in any real deployment.
+# A random per-process key breaks signed session cookies the moment you
+# run more than one worker/instance (each would sign with a different
+# key), and this app relies entirely on in-memory dicts keyed by that
+# session cookie -- see the architecture note in README.md before
+# deploying anywhere beyond a single local `python app.py` process.
+app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 
 SESSION_TTL_MINUTES = 30
 PENDING_LOGIN_TTL_MINUTES = 5
@@ -187,4 +195,6 @@ def api_logout():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    debug_mode = os.environ.get("FLASK_DEBUG", "1") == "1"
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(debug=debug_mode, port=port, host="0.0.0.0")

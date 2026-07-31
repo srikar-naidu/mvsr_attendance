@@ -1,6 +1,6 @@
 /* ==========================================================================
    Bunk Meter — design system
-   Themes: light / dark / midnight / glass (+ system, resolved at runtime)
+   Themes: light / dark / glass
    ========================================================================== */
 
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
@@ -60,22 +60,6 @@
   --blob-1: rgba(109, 91, 255, 0.28);
   --blob-2: rgba(255, 107, 163, 0.18);
   --blob-3: rgba(45, 212, 176, 0.16);
-}
-
-/* ---- Theme: midnight (deeper, cooler, more dramatic) ---- */
-[data-theme="midnight"] {
-  --bg: #05060b;
-  --bg-elevated: #0c0e18;
-  --bg-elevated-2: #121523;
-  --bg-nav: rgba(6, 7, 14, 0.75);
-  --text: #eef0ff;
-  --text-muted: #7d81a3;
-  --border: rgba(140, 150, 255, 0.12);
-  --border-strong: rgba(140, 150, 255, 0.2);
-  --shadow-soft: 0 30px 90px -35px rgba(60, 40, 180, 0.55);
-  --blob-1: rgba(89, 76, 255, 0.35);
-  --blob-2: rgba(56, 189, 248, 0.16);
-  --blob-3: rgba(168, 85, 247, 0.18);
 }
 
 /* ---- Theme: glass (heavy translucency everywhere) ---- */
@@ -821,17 +805,6 @@ button, input {
 .theme-chip .swatch { width: 100%; height: 32px; border-radius: 8px; margin-bottom: 8px; }
 .theme-chip .lbl { font-size: 0.72rem; font-weight: 700; }
 
-.accent-row { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
-.accent-dot {
-  width: 34px; height: 34px; border-radius: 50%;
-  cursor: pointer;
-  border: 3px solid transparent;
-  transition: transform 160ms var(--ease-spring), border-color 200ms;
-  position: relative;
-}
-.accent-dot:hover { transform: scale(1.1); }
-.accent-dot.active { border-color: var(--text); }
-
 .info-row { display: flex; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
 .info-row:last-child { border-bottom: none; }
 .info-row .k { color: var(--text-muted); }
@@ -885,4 +858,140 @@ button, input {
 
 @media (min-width: 769px) {
   .topnav-theme-btn { display: inline-flex; }
+}
+
+/* ==========================================================================
+   Skeleton loaders
+   ========================================================================== */
+
+@keyframes shimmer {
+  0% { background-position: -300px 0; }
+  100% { background-position: 300px 0; }
+}
+
+.skel {
+  background: linear-gradient(90deg, var(--bg-elevated-2) 25%, var(--border-strong) 50%, var(--bg-elevated-2) 75%);
+  background-size: 300px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+.skel-line { height: 12px; margin-bottom: 8px; }
+.skel-line.w-60 { width: 60%; }
+.skel-line.w-40 { width: 40%; }
+.skel-line.w-80 { width: 80%; }
+.skel-line.w-100 { width: 100%; }
+
+.skel-circle { width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0; }
+.skel-ring { width: 118px; height: 118px; border-radius: 50%; flex-shrink: 0; }
+.skel-row { display: flex; align-items: center; gap: 16px; }
+.skel-bar { height: 7px; border-radius: 999px; margin-top: 11px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .skel { animation: none; opacity: 0.6; }
+}
+
+/* ==========================================================================
+   Error / empty states
+   ========================================================================== */
+
+.state-card {
+  text-align: center;
+  padding: 40px 24px;
+}
+.state-icon { font-size: 2.2rem; margin-bottom: 12px; }
+.state-title { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+.state-msg { color: var(--text-muted); font-size: 0.86rem; line-height: 1.5; max-width: 340px; margin: 0 auto; }
+.state-actions { display: flex; gap: 10px; justify-content: center; margin-top: 20px; flex-wrap: wrap; }
+.state-actions button { width: auto; margin-top: 0; padding: 10px 20px; font-size: 0.84rem; }
+
+/* ==========================================================================
+   Refresh control + pull-to-refresh
+   ========================================================================== */
+
+.topnav-actions { display: flex; align-items: center; gap: 2px; margin-left: 2px; padding-left: 6px; border-left: 1px solid var(--border); }
+
+.icon-btn {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1rem;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background 200ms var(--ease-out), color 200ms var(--ease-out), transform 150ms var(--ease-spring);
+}
+.icon-btn:hover { background: var(--bg-elevated-2); color: var(--text); }
+.icon-btn:active { transform: scale(0.9); }
+.icon-btn.spinning svg, .icon-btn.spinning { animation: spin 800ms linear infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#pull-indicator {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.05rem;
+  opacity: 0;
+  transform: translateY(0) translateX(-50%);
+  z-index: 60;
+  pointer-events: none;
+}
+#pull-indicator.ready { color: var(--accent); }
+#pull-indicator.spinning { animation: spin 800ms linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-btn.spinning, #pull-indicator.spinning { animation: none; }
+}
+
+/* ==========================================================================
+   Toasts
+   ========================================================================== */
+
+#toast-stack {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 18px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 600;
+  opacity: 0;
+  transform: translateY(14px) scale(0.96);
+  animation: toast-in 380ms var(--ease-spring) forwards;
+}
+.toast.leaving { animation: toast-out 260ms var(--ease-out) forwards; }
+.toast.success { border-color: color-mix(in srgb, var(--safe) 40%, var(--border-strong)); }
+.toast.error { border-color: color-mix(in srgb, var(--danger) 40%, var(--border-strong)); }
+
+@keyframes toast-in { to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes toast-out { to { opacity: 0; transform: translateY(10px) scale(0.96); } }
+
+@media (min-width: 769px) {
+  #toast-stack { bottom: 28px; }
 }

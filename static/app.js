@@ -4,16 +4,7 @@
 
 const TARGET_PCT = 75;
 
-const ACCENTS = {
-  violet: { accent: '#6d5bff', accent2: '#a78bff' },
-  blue:   { accent: '#3b82f6', accent2: '#60a5fa' },
-  emerald:{ accent: '#10b981', accent2: '#34d399' },
-  rose:   { accent: '#f43f5e', accent2: '#fb7185' },
-  amber:  { accent: '#f59e0b', accent2: '#fbbf24' },
-  cyan:   { accent: '#06b6d4', accent2: '#22d3ee' },
-};
-
-const THEMES = ['light', 'dark', 'midnight', 'glass', 'system'];
+const THEMES = ['light', 'dark', 'glass'];
 
 const state = {
   captchaRequired: false,
@@ -26,49 +17,39 @@ const state = {
 // Theme
 // -------------------------------------------------------------------------
 
-function systemPrefersDark() {
-  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-}
-
-function resolveTheme(pref) {
-  return pref === 'system' ? (systemPrefersDark() ? 'dark' : 'light') : pref;
-}
-
 function applyTheme(pref) {
-  const resolved = resolveTheme(pref);
-  document.documentElement.setAttribute('data-theme', resolved);
-  document.documentElement.setAttribute('data-theme-pref', pref);
-}
-
-function applyAccent(name) {
-  const a = ACCENTS[name] || ACCENTS.violet;
-  document.documentElement.style.setProperty('--accent', a.accent);
-  document.documentElement.style.setProperty('--accent-2', a.accent2);
+  document.documentElement.setAttribute('data-theme', pref);
 }
 
 function initTheme() {
   const savedTheme = localStorage.getItem('bunkmeter-theme') || 'dark';
-  const savedAccent = localStorage.getItem('bunkmeter-accent') || 'violet';
-  applyTheme(savedTheme);
-  applyAccent(savedAccent);
-
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    if ((localStorage.getItem('bunkmeter-theme') || 'dark') === 'system') {
-      applyTheme('system');
-    }
-  });
+  applyTheme(THEMES.includes(savedTheme) ? savedTheme : 'dark');
 }
+
+const THEME_LABELS = { light: 'Light', dark: 'Dark', glass: 'Glass' };
 
 function setTheme(pref) {
   localStorage.setItem('bunkmeter-theme', pref);
   applyTheme(pref);
   renderThemePicker();
+  showToast('Theme set to ' + THEME_LABELS[pref], 'info', '\ud83c\udfa8');
 }
 
-function setAccent(name) {
-  localStorage.setItem('bunkmeter-accent', name);
-  applyAccent(name);
-  renderThemePicker();
+// -------------------------------------------------------------------------
+// Toasts
+// -------------------------------------------------------------------------
+
+function showToast(message, type, icon) {
+  const stack = document.getElementById('toast-stack');
+  if (!stack) return;
+  const toast = document.createElement('div');
+  toast.className = 'toast' + (type ? ' ' + type : '');
+  toast.innerHTML = '<span>' + (icon || '\u2728') + '</span><span>' + message + '</span>';
+  stack.appendChild(toast);
+  setTimeout(function () {
+    toast.classList.add('leaving');
+    setTimeout(function () { toast.remove(); }, 280);
+  }, 2400);
 }
 
 // -------------------------------------------------------------------------
@@ -298,20 +279,93 @@ async function enterApp() {
   await loadAttendance();
 }
 
+const ALL_TABS = ['dashboard', 'analytics', 'timetable', 'skip', 'profile'];
+
+function renderSkeletons() {
+  el('tab-dashboard').innerHTML =
+    '<div class="card skel-row"><div class="skel skel-circle"></div><div style="flex:1"><div class="skel skel-line w-40"></div><div class="skel skel-line w-60"></div></div></div>' +
+    '<div class="card skel-row"><div class="skel skel-ring"></div><div style="flex:1"><div class="skel skel-line w-40"></div><div class="skel skel-line w-80"></div></div></div>' +
+    '<div class="card"><div class="skel skel-line w-60"></div><div class="skel skel-bar w-100"></div><div class="skel skel-line w-40" style="margin-top:10px"></div></div>' +
+    '<div class="card"><div class="skel skel-line w-60"></div><div class="skel skel-bar w-100"></div><div class="skel skel-line w-40" style="margin-top:10px"></div></div>';
+
+  el('tab-analytics').innerHTML =
+    '<div class="card skel-row"><div class="skel skel-circle"></div><div style="flex:1"><div class="skel skel-line w-60"></div></div></div>' +
+    '<div class="card"><div class="skel skel-line w-40"></div><div class="skel skel-bar w-100" style="height:120px"></div></div>' +
+    '<div class="card"><div class="skel skel-line w-40"></div><div class="skel skel-bar w-100" style="height:120px"></div></div>';
+
+  el('tab-timetable').innerHTML =
+    '<div class="card"><div class="skel skel-line w-40"></div><div class="skel skel-line w-80"></div>' +
+    '<div class="skel skel-bar w-100" style="height:40px;margin-top:16px"></div>' +
+    '<div class="skel skel-bar w-100" style="height:40px"></div><div class="skel skel-bar w-100" style="height:40px"></div></div>';
+
+  el('tab-skip').innerHTML =
+    '<div class="card"><div class="skel skel-line w-40"></div><div class="skel skel-line w-80"></div>' +
+    '<div class="skel skel-bar w-100" style="height:44px;margin-top:16px"></div></div>';
+
+  el('tab-profile').innerHTML =
+    '<div class="card skel-row"><div class="skel skel-circle"></div><div style="flex:1"><div class="skel skel-line w-40"></div><div class="skel skel-line w-60"></div></div></div>' +
+    '<div class="card"><div class="skel skel-line w-60"></div><div class="skel skel-line w-40"></div><div class="skel skel-line w-80"></div></div>';
+}
+
+function buildErrorCard(message) {
+  return (
+    '<div class="card state-card">' +
+      '<div class="state-icon">\u26a0\ufe0f</div>' +
+      '<div class="state-title">Could not load your attendance</div>' +
+      '<div class="state-msg">' + message + '</div>' +
+      '<div class="state-actions">' +
+        '<button class="btn-primary" style="margin-top:0" data-action="retry">Retry</button>' +
+        '<button class="btn-outline" style="margin-top:0" data-action="logout">Log out</button>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+function renderErrorStates(message) {
+  ALL_TABS.forEach(function (tab) {
+    el('tab-' + tab).innerHTML = buildErrorCard(message);
+  });
+  document.querySelectorAll('[data-action="retry"]').forEach(function (btn) {
+    btn.addEventListener('click', function () { loadAttendance(); });
+  });
+  document.querySelectorAll('[data-action="logout"]').forEach(function (btn) {
+    btn.addEventListener('click', handleLogout);
+  });
+}
+
 async function loadAttendance() {
-  const loadingHtml = '<div class="loading">Loading your attendance…</div>';
-  ['tab-dashboard'].forEach(id => { el(id).innerHTML = loadingHtml; });
+  renderSkeletons();
   try {
     const res = await fetch('/api/attendance');
     const data = await res.json();
     if (!res.ok) {
-      el('tab-dashboard').innerHTML = `<div class="loading">${data.error || 'Something went wrong.'}</div>`;
+      renderErrorStates(data.error || 'Something went wrong. Please try again.');
       return;
     }
     state.data = data;
     renderAll();
   } catch (e) {
-    el('tab-dashboard').innerHTML = '<div class="loading">Network error. Try refreshing.</div>';
+    renderErrorStates('Network error \u2014 check your connection and try again.');
+  }
+}
+
+async function refreshData(showFeedback) {
+  const btn = document.getElementById('refresh-btn');
+  if (btn) btn.classList.add('spinning');
+  try {
+    const res = await fetch('/api/attendance');
+    const data = await res.json();
+    if (!res.ok) {
+      if (showFeedback) showToast(data.error || 'Could not refresh.', 'error', '\u26a0\ufe0f');
+      return;
+    }
+    state.data = data;
+    renderAll();
+    if (showFeedback) showToast('Attendance refreshed', 'success', '\u2705');
+  } catch (e) {
+    if (showFeedback) showToast('Network error \u2014 could not refresh.', 'error', '\u26a0\ufe0f');
+  } finally {
+    if (btn) btn.classList.remove('spinning');
   }
 }
 
@@ -474,11 +528,9 @@ function buildThemeChips() {
   const swatches = {
     light: 'linear-gradient(135deg, #f4f3f8, #ffffff)',
     dark: 'linear-gradient(135deg, #0e0f14, #1e2029)',
-    midnight: 'linear-gradient(135deg, #05060b, #1a1240)',
     glass: 'linear-gradient(135deg, #8c6eff, #46dcbe)',
-    system: 'linear-gradient(135deg, #cfcfcf, #333333)',
   };
-  const labels = { light: '\u2600\ufe0f Light', dark: '\ud83c\udf19 Dark', system: '\ud83d\udda5\ufe0f System', midnight: '\ud83c\udf0c Midnight', glass: '\ud83e\uddca Glass' };
+  const labels = { light: '\u2600\ufe0f Light', dark: '\ud83c\udf19 Dark', glass: '\ud83e\uddca Glass' };
   let html = '';
   THEMES.forEach(function (t) {
     const active = t === current ? ' active' : '';
@@ -490,31 +542,15 @@ function buildThemeChips() {
   return html;
 }
 
-function buildAccentDots() {
-  const current = localStorage.getItem('bunkmeter-accent') || 'violet';
-  let html = '';
-  Object.keys(ACCENTS).forEach(function (name) {
-    const a = ACCENTS[name];
-    const active = name === current ? ' active' : '';
-    html += '<div class="accent-dot' + active + '" data-accent-choice="' + name + '" style="background:linear-gradient(135deg,' + a.accent + ',' + a.accent2 + ')"></div>';
-  });
-  return html;
-}
-
 function renderThemePicker() {
   const wrap = document.getElementById('theme-picker-wrap');
   if (!wrap) return;
   wrap.innerHTML =
     '<div class="eyebrow">Appearance</div>' +
-    '<div class="theme-grid">' + buildThemeChips() + '</div>' +
-    '<div class="eyebrow" style="margin-top:20px">Accent color</div>' +
-    '<div class="accent-row">' + buildAccentDots() + '</div>';
+    '<div class="theme-grid">' + buildThemeChips() + '</div>';
 
   wrap.querySelectorAll('.theme-chip').forEach(function (chip) {
     chip.addEventListener('click', function () { setTheme(chip.dataset.themeChoice); });
-  });
-  wrap.querySelectorAll('.accent-dot').forEach(function (dot) {
-    dot.addEventListener('click', function () { setAccent(dot.dataset.accentChoice); });
   });
 }
 
@@ -714,9 +750,71 @@ function wireNav() {
   });
 }
 
+// -------------------------------------------------------------------------
+// Pull-to-refresh (mobile) + manual refresh button
+// -------------------------------------------------------------------------
+
+function rubberband(overshoot, dimension, constant) {
+  constant = constant || 0.55;
+  return (overshoot * dimension * constant) / (dimension + constant * Math.abs(overshoot));
+}
+
+function wireRefresh() {
+  const refreshBtn = document.getElementById('refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', function () {
+      if (state.data) refreshData(true);
+    });
+  }
+
+  const indicator = document.getElementById('pull-indicator');
+  if (!indicator) return;
+
+  const PULL_THRESHOLD = 68;
+  const PULL_MAX = 110;
+  let startY = null;
+  let pulling = false;
+
+  document.addEventListener('touchstart', function (e) {
+    if (window.scrollY <= 0 && state.data && state.activeTab !== null) {
+      startY = e.touches[0].clientY;
+      pulling = true;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function (e) {
+    if (!pulling) return;
+    const delta = e.touches[0].clientY - startY;
+    if (delta <= 0) return;
+    const damped = rubberband(delta, PULL_MAX);
+    indicator.style.transform = 'translateY(' + damped + 'px) translateX(-50%)';
+    indicator.style.opacity = String(Math.min(damped / PULL_THRESHOLD, 1));
+    indicator.classList.toggle('ready', damped >= PULL_THRESHOLD * 0.9);
+  }, { passive: true });
+
+  document.addEventListener('touchend', function () {
+    if (!pulling) return;
+    pulling = false;
+    const wasReady = indicator.classList.contains('ready');
+    indicator.style.transition = 'transform 300ms var(--ease-spring), opacity 300ms var(--ease-out)';
+    indicator.style.transform = 'translateY(0) translateX(-50%)';
+    indicator.style.opacity = '0';
+    indicator.classList.remove('ready');
+    if (wasReady) {
+      indicator.classList.add('spinning');
+      indicator.style.opacity = '1';
+      refreshData(true).then(function () {
+        indicator.classList.remove('spinning');
+      });
+    }
+    setTimeout(function () { indicator.style.transition = ''; }, 320);
+  });
+}
+
 function init() {
   initTheme();
   wireNav();
+  wireRefresh();
 
   el('login-btn').addEventListener('click', handleLogin);
   el('captcha-refresh').addEventListener('click', initLogin);

@@ -8,11 +8,9 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <script>
 (function () {
+  var validThemes = ['light', 'dark', 'glass'];
   var pref = localStorage.getItem('bunkmeter-theme') || 'dark';
-  var resolved = pref === 'system'
-    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    : pref;
-  document.documentElement.setAttribute('data-theme', resolved);
+  document.documentElement.setAttribute('data-theme', validThemes.indexOf(pref) === -1 ? 'dark' : pref);
 })();
 </script>
 </head>
@@ -73,7 +71,13 @@
       <button class="nav-btn" data-tab="skip"><span class="icon">🎯</span> Skip Calc</button>
       <button class="nav-btn" data-tab="profile"><span class="icon">👤</span> Profile</button>
     </div>
+    <div class="topnav-actions">
+      <button class="icon-btn" id="refresh-btn" title="Refresh attendance">↻</button>
+    </div>
   </nav>
+
+  <div id="pull-indicator">↻</div>
+  <div id="toast-stack"></div>
 
   <main class="app-main">
     <section id="tab-dashboard" class="tab-panel active"><div class="loading">Loading attendance…</div></section>
