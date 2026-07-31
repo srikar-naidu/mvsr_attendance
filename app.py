@@ -28,10 +28,19 @@ import time
 import uuid
 import secrets
 from flask import Flask, request, jsonify, session, render_template, Response
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from scraper import start_login, finish_login, get_dashboard_data, LoginError, ScrapeError
 
+# Render and Railway both terminate HTTPS at a reverse proxy in front of
+# this app, forwarding plain HTTP with X-Forwarded-* headers. ProxyFix
+# makes Flask/Werkzeug trust exactly one hop of those headers, so
+# request.remote_addr (used for rate-limiting) and url_for's scheme are
+# correct instead of showing the proxy's own address.
+IS_PRODUCTION = os.environ.get("FLASK_DEBUG", "1") != "1"
+
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # IMPORTANT: set a fixed SECRET_KEY env var in any real deployment.
 # A random per-process key breaks signed session cookies the moment you
@@ -40,6 +49,12 @@ app = Flask(__name__)
 # session cookie -- see the architecture note in README.md before
 # deploying anywhere beyond a single local `python app.py` process.
 app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+
+app.config.update(
+    SESSION_COOKIE_SECURE=IS_PRODUCTION,   # only send the cookie over HTTPS in production
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
 
 SESSION_TTL_MINUTES = 30
 PENDING_LOGIN_TTL_MINUTES = 5
@@ -70,7 +85,9 @@ def _cleanup_expired():
 
 
 def _client_ip() -> str:
-    return request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
+    # ProxyFix (see app setup above) already rewrites request.remote_addr
+    # from X-Forwarded-For when running behind Render/Railway's proxy.
+    return request.remote_addr or "unknown"
 
 
 def _rate_limited(ip: str) -> bool:
@@ -195,6 +212,8 @@ def api_logout():
 
 
 if __name__ == "__main__":
-    debug_mode = os.environ.get("FLASK_DEBUG", "1") == "1"
+    # Only used for local development (`python app.py`). Render/Railway run
+    # this app via the Procfile's gunicorn command instead, which never
+    # executes this block.
     port = int(os.environ.get("PORT", "5000"))
-    app.run(debug=debug_mode, port=port, host="0.0.0.0")
+    app.run(debug=not IS_PRODUCTION, port=port, host="0.0.0.0")

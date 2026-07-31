@@ -34,12 +34,14 @@ classes they can skip (or must attend) to stay at/reach 75%.
   - **Analytics** — 🔥 attendance streak, weekly/monthly attendance bar
     charts, present-vs-absent day donut, and a subject-wise trend list —
     all computed client-side from the real day-by-day history.
-  - **Period Log** — a day-wise record of attendance per time slot,
-    built from the portal's real per-slot P/A data. It's intentionally
-    *not* called a timetable: the portal does not expose which subject
-    runs in each period, so this shows attendance status by time slot,
-    not by class name (that mapping only exists in the subject-wise
-    summary table).
+  - **Period Log** — the real, per-day sequence of Present/Absent/Gap
+    blocks exactly as scraped from the portal for that date, browsable
+    day by day. It's intentionally *not* called a timetable: the portal
+    does not expose which subject runs in each period, so this shows
+    the raw attendance record, not a class schedule. Earlier versions
+    tried to normalize every day into a fixed 7-slot grid, which made
+    different real days look artificially similar — this view now shows
+    the literal scraped blocks with no reinterpretation.
   - **Skip calculator** — pick any subject (or overall) and see exactly
     how many classes you can miss, or must attend, to stay at 75%.
   - **Profile** — student details, theme picker (light / dark / glass),
@@ -110,60 +112,78 @@ and fast for a single long-running process, but it means:
   do run more than one) signs cookies with a different random key, and
   sessions from before the restart silently stop validating.
 
-### Recommended hosts (no architecture changes needed)
+### Deploying to Render
 
-Render, Railway, Fly.io, and PythonAnywhere all run your app as a
-persistent single process — exactly what this app already assumes.
-Deployment is just:
+`render.yaml` in this repo is a Render **Blueprint** — Render reads it
+automatically:
 
-1. Push this repo (the `Procfile` and `requirements.txt` are already set up).
-2. Set environment variables:
-   - `SECRET_KEY` — generate one once with `python -c "import secrets; print(secrets.token_hex(32))"` and set it permanently.
-   - `FLASK_DEBUG=0` — disables the Flask debugger in production.
-3. Make sure the host runs a **single instance/dyno** (the free tiers of
-   all four hosts above do this by default — you'd have to opt in to
-   multiple instances).
+1. Push this repo to GitHub.
+2. In the Render dashboard: **New > Blueprint**, point it at the repo.
+3. Render reads `render.yaml` and creates a free web service with:
+   - Build command: `pip install -r requirements.txt`
+   - Start command: `gunicorn app:app --workers 1 --threads 8 --timeout 30`
+   - `SECRET_KEY` auto-generated for you (`generateValue: true`)
+   - `FLASK_DEBUG=0` already set
+4. Deploy. Render gives you an HTTPS URL immediately.
 
-That's it — no code changes needed beyond what's already in this repo.
+If you'd rather configure it manually instead of using the Blueprint,
+just set the Build/Start commands above and add the two env vars
+yourself (`SECRET_KEY` — generate one with
+`python -c "import secrets; print(secrets.token_hex(32))"` — and
+`FLASK_DEBUG=0`).
 
-### ⚠️ Vercel specifically: not compatible as-is
+**Free tier note:** Render's free web services spin down after 15
+minutes of inactivity and take ~30-60s to wake back up on the next
+request. That's fine for personal/classmate use, just expect a slow
+first load after idle periods.
 
-You mentioned wanting to deploy this on Vercel. **I'd recommend against
-it for this app without a rearchitecture**, for a reason that has
-nothing to do with Flask support (Vercel's Python runtime handles Flask
-fine) and everything to do with statefulness:
+### Deploying to Railway
 
-- Vercel Python functions run as **stateless, ephemeral serverless
-  invocations**. There is no guarantee two requests — e.g. your
-  `GET /api/login/start` and the following `POST /api/login` — land on
-  the same instance, or that any instance survives long between
-  requests.
-- This app's entire login flow depends on the *same process* remembering
-  the pending CAPTCHA session between those two requests
-  (`_pending_logins`), and remembering the authenticated portal session
-  between every subsequent `/api/attendance` call (`_active_sessions`).
-  On Vercel, that memory can vanish or be on a different instance by
-  the very next request — you'd see intermittent "login session
-  expired" and "not logged in" errors that are impossible to reproduce
-  reliably, because it depends on Vercel's routing/cold-start behavior
-  at that moment, not your code.
-- The `SECRET_KEY` issue above is worse here: every cold-started
-  instance would need the *same* fixed key (fixable with an env var),
-  but that alone doesn't fix the missing shared session state.
+Railway auto-detects Python + the `Procfile` via its Nixpacks builder,
+so no extra config file is required:
 
-**To actually make this work on Vercel**, the in-memory dicts would
-need to move to a shared external store (e.g. Vercel KV / Upstash
-Redis), storing serialized cookies rather than live `requests.Session`
-objects, reconstructing a session from stored cookies on every request.
-That's a genuine backend rearchitecture, not a config change — happy to
-build it if you want to go that route, but it needs you to provision a
-KV/Redis instance first (there's a generous free tier on Upstash that
-integrates natively with Vercel).
+1. Push this repo to GitHub.
+2. In Railway: **New Project > Deploy from GitHub repo**, pick this repo.
+3. Railway detects `requirements.txt` and `Procfile` automatically and
+   runs `gunicorn app:app --workers 1 --threads 8 --timeout 30`.
+4. In the service's **Variables** tab, add:
+   - `SECRET_KEY` — generate with `python -c "import secrets; print(secrets.token_hex(32))"`
+   - `FLASK_DEBUG` = `0`
+5. Under **Settings > Networking**, click **Generate Domain** to get a
+   public HTTPS URL.
 
-**My recommendation:** deploy to Render or Railway (both have simple
-free/hobby tiers, HTTPS by default, and need zero code changes beyond
-setting the two environment variables above) unless you specifically
-need Vercel for another reason.
+Railway's free tier doesn't sleep the way Render's does, but it runs on
+a usage-based trial credit rather than being unconditionally free
+long-term — check their current pricing before relying on it.
+
+### Either way, double-check these two things after deploying
+
+- **Only one instance/replica is running.** Both Render's and Railway's
+  free tiers default to exactly one instance, so you shouldn't need to
+  change anything — just don't manually scale to multiple instances
+  without also moving `_active_sessions`/`_pending_logins` to shared
+  storage first (see the architecture note above).
+- **Outbound HTTPS to `mvsr.winnou.net` isn't blocked.** Both platforms
+  allow normal outbound requests by default, but this is worth
+  confirming with a real login attempt right after your first deploy,
+  since it's the one thing I can't verify without an active deployment.
+
+### ⚠️ Why not Vercel (for reference)
+
+Vercel's Python runtime handles Flask fine — the problem is
+statefulness, not the framework. Vercel Python functions are
+**stateless, ephemeral serverless invocations** with no guarantee two
+requests (e.g. `GET /api/login/start` then `POST /api/login`) land on
+the same instance or that any instance survives between requests. This
+app's entire login flow depends on the *same process* remembering the
+pending CAPTCHA session and the authenticated portal session in memory
+— on Vercel that memory can vanish or differ per-instance from one
+request to the next, producing intermittent, hard-to-reproduce "session
+expired" errors driven by Vercel's routing, not the code. Making this
+work on Vercel would mean moving that state to an external store (e.g.
+Upstash Redis) and storing serialized cookies instead of live
+`requests.Session` objects — a real rearchitecture. Render/Railway need
+none of that, which is why this repo is set up for them instead.
 
 ## Notes on the target percentage
 

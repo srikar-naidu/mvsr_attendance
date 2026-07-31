@@ -153,36 +153,28 @@ function computePresentVsAbsent(calendar) {
 // The portal's own colspans for a day don't always sum to the declared 84
 // units (7 slots x 12) -- a quirk in the source system, not our parsing.
 // We proportionally rescale so slot boundaries stay meaningful either way.
-const SLOT_LABELS = [
-  '9:30 - 10:30', '10:30 - 11:30', '11:30 - 12:30',
-  '12:30 - 13:30', '13:30 - 14:30', '14:30 - 15:30', '15:30 - 16:15',
-];
-const SLOT_UNITS_TOTAL = 84;
-const SLOT_UNIT_SIZE = 12;
+// Reference only — the college's known slot boundaries, shown as a
+// caption. NOT used to relabel or reinterpret real segments: doing that
+// previously forced every day into an identical-looking 7-row template
+// (see git history), which made genuinely different days look the same.
+const SLOT_REFERENCE = '9:30–10:30, 10:30–11:30, 11:30–12:30, 12:30–13:30, 13:30–14:30, 14:30–15:30, 15:30–16:15';
 
-function mapDayToSlots(day) {
-  const totalWidth = day.segments.reduce((sum, s) => sum + s.width, 0) || 1;
-  const scale = SLOT_UNITS_TOTAL / totalWidth;
-
-  // Flatten into 84 virtual units, then bucket into 7 slots of 12.
-  const units = [];
-  day.segments.forEach(seg => {
-    const scaledWidth = Math.round(seg.width * scale);
-    for (let i = 0; i < scaledWidth; i++) units.push(seg.status);
+// The portal already merges consecutive identical-status cells into one
+// colspan block server-side, so day.segments should already be minimal.
+// We merge again defensively in case two adjacent entries ever share a
+// status (e.g. after a parsing edge case), purely as a lossless cleanup
+// — never redistributing or averaging values.
+function mergeAdjacentSegments(segments) {
+  const merged = [];
+  segments.forEach(function (seg) {
+    const last = merged[merged.length - 1];
+    if (last && last.status === seg.status) {
+      last.width += seg.width;
+    } else {
+      merged.push({ status: seg.status, width: seg.width });
+    }
   });
-  while (units.length < SLOT_UNITS_TOTAL) units.push('-');
-
-  const slots = [];
-  for (let i = 0; i < 7; i++) {
-    const chunk = units.slice(i * SLOT_UNIT_SIZE, (i + 1) * SLOT_UNIT_SIZE);
-    const counts = { P: 0, A: 0, '-': 0 };
-    chunk.forEach(s => { counts[s] = (counts[s] || 0) + 1; });
-    let status = '-';
-    if (counts.P >= counts.A && counts.P > counts['-']) status = 'P';
-    else if (counts.A > counts.P && counts.A > counts['-']) status = 'A';
-    slots.push({ label: SLOT_LABELS[i], status });
-  }
-  return slots;
+  return merged;
 }
 
 // -------------------------------------------------------------------------
@@ -664,7 +656,7 @@ function renderTimetable() {
   html += '<div class="card">';
   html += '<div class="eyebrow">Period Log</div>';
   html += '<h2 style="font-size:1.15rem">' + activeDay.label + '</h2>';
-  html += '<p class="subject-meta" style="margin-top:4px">Shows attendance status per period \u2014 subject names aren\u2019t available for this view, only the summary table has those.</p>';
+  html += '<p class="subject-meta" style="margin-top:4px">The exact blocks recorded for this day \u2014 pulled fresh from the portal, not smoothed or reinterpreted. Subject names aren\u2019t available at this level, only in the summary table.</p>';
   html += '<div class="day-switcher" id="day-switcher">' + buildDayChips(days) + '</div>';
   html += buildPeriodList(activeDay);
   html += '</div>';
@@ -727,20 +719,32 @@ function buildDayChips(days) {
 }
 
 function buildPeriodList(day) {
-  const slots = mapDayToSlots(day);
+  const segments = mergeAdjacentSegments(day.segments);
+  const totalWidth = segments.reduce(function (sum, s) { return sum + s.width; }, 0) || 1;
+  let periodNumber = 0;
+
   let html = '<div class="period-list">';
-  slots.forEach(function (slot, i) {
-    const statusClass = slot.status === 'P' ? 'status-P' : slot.status === 'A' ? 'status-A' : 'status-none';
-    const badgeColor = slot.status === 'P' ? 'var(--safe)' : slot.status === 'A' ? 'var(--danger)' : 'var(--text-muted)';
-    const badgeBg = slot.status === 'P' ? 'var(--safe-soft)' : slot.status === 'A' ? 'var(--danger-soft)' : 'var(--bg-elevated-2)';
-    const label = slot.status === 'P' ? 'Present' : slot.status === 'A' ? 'Absent' : 'No class';
+  segments.forEach(function (seg) {
+    const statusClass = seg.status === 'P' ? 'status-P' : seg.status === 'A' ? 'status-A' : 'status-none';
+    const badgeColor = seg.status === 'P' ? 'var(--safe)' : seg.status === 'A' ? 'var(--danger)' : 'var(--text-muted)';
+    const badgeBg = seg.status === 'P' ? 'var(--safe-soft)' : seg.status === 'A' ? 'var(--danger-soft)' : 'var(--bg-elevated-2)';
+    const label = seg.status === 'P' ? 'Present' : seg.status === 'A' ? 'Absent' : 'No class';
+    const share = Math.round((seg.width / totalWidth) * 100);
+    let name;
+    if (seg.status === '-') {
+      name = 'Gap \u00b7 ' + share + '% of day';
+    } else {
+      periodNumber++;
+      name = 'Period ' + periodNumber + ' \u00b7 ' + share + '% of day';
+    }
     html += '<div class="period-row ' + statusClass + '">';
-    html += '<div class="period-slot">' + slot.label + '</div>';
-    html += '<div class="period-name">Period ' + (i + 1) + '</div>';
+    html += '<div class="period-slot"><div class="bar-track" style="margin-top:0;width:60px"><div class="bar-fill" style="width:100%;background:' + badgeColor + '"></div></div></div>';
+    html += '<div class="period-name">' + name + '</div>';
     html += '<div class="period-status-badge" style="color:' + badgeColor + '; background:' + badgeBg + '">' + label + '</div>';
     html += '</div>';
   });
   html += '</div>';
+  html += '<p class="subject-meta" style="margin-top:14px">Reference: the college\u2019s standard period times are ' + SLOT_REFERENCE + '. Each row above is a real block from the portal\u2019s attendance record for this day, in order \u2014 not remapped to these times.</p>';
   return html;
 }
 
